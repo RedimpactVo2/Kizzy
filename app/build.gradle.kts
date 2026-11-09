@@ -10,7 +10,7 @@ android {
     namespace = "com.my.kizzy"
 
     defaultConfig {
-        applicationId = "com.my.kizzy"
+        applicationId = "com.my.kizzy.multirpc"
         versionCode = libs.versions.version.code.get().toInt()
         versionName = libs.versions.version.name.get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
