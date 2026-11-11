@@ -17,7 +17,7 @@ android {
         }
         create("ripro") {
             dimension = "distribution"
-            applicationId = "com.my.kizzy.multirpc"
+            applicationId = "com.my.kizzy.ripro.bridge"
         }
     }
 
