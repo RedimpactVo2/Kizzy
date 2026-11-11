@@ -12,25 +12,27 @@
 
 package com.my.kizzy.data.rpc
 
+import android.content.Context
 import com.my.kizzy.domain.interfaces.Logger
 import com.my.kizzy.domain.repository.KizzyRepository
 import com.my.kizzy.preference.Prefs
 import com.my.kizzy.preference.Prefs.CUSTOM_ACTIVITY_TYPE
-import kizzy.gateway.DiscordWebSocket
 import kizzy.gateway.entities.presence.Activity
 import kizzy.gateway.entities.presence.Assets
 import kizzy.gateway.entities.presence.Metadata
 import kizzy.gateway.entities.presence.Party
 import kizzy.gateway.entities.presence.Presence
 import kizzy.gateway.entities.presence.Timestamps
-import kotlinx.coroutines.isActive
+import java.util.UUID
 
 class KizzyRPC(
+    private val context: Context,
     private val token: String,
     private val kizzyRepository: KizzyRepository,
-    private val discordWebSocket: DiscordWebSocket,
     private val logger: Logger
 ) {
+    private val sourceId = "${context.packageName}:${UUID.randomUUID()}"
+    private var running = false
     private lateinit var presence: Presence
     private var activityName: String? = null
     private var applicationIdNumber = Prefs[Prefs.CUSTOM_ACTIVITY_APPLICATION_ID, Constants.APPLICATION_ID]
@@ -51,12 +53,11 @@ class KizzyRPC(
     private var url: String? = null
 
     fun closeRPC() {
-        discordWebSocket.close()
+        RpcPresenceBridge.remove(context, sourceId)
+        running = false
     }
 
-    fun isRpcRunning(): Boolean {
-        return discordWebSocket.isWebSocketConnected()
-    }
+    fun isRpcRunning(): Boolean = running
 
     /**
      * Use Regex to check if token are valid
@@ -297,27 +298,27 @@ class KizzyRPC(
             since = startTimestamps.takeIf { startTimestamps != null }?: System.currentTimeMillis(),
             status = status
         )
-        connectToWebSocket()
+        publishPresence()
     }
-    private suspend fun connectToWebSocket() {
-        if (!isUserTokenValid())
+
+    private fun publishPresence() {
+        if (!isUserTokenValid()) {
             logger.e(
                 tag = "KizzyRPC",
                 event = "Token Seems to be invalid, Please Login if you haven't"
             )
-        discordWebSocket.connect()
-        discordWebSocket.sendActivity(presence)
+        }
+        RpcPresenceBridge.submit(context, sourceId, presence)
+        running = true
     }
 
     suspend fun updateRPC(commonRpc: CommonRpc, enableTimestamps: Boolean? = true) {
-        if (!discordWebSocket.isActive) return
         var time = Timestamps(start = startTimestamps)
         if (commonRpc.time != null)
             Timestamps(end = commonRpc.time.end, start = commonRpc.time.start).also { time = it }
         if (commonRpc.partyCurrentSize != null && commonRpc.partyMaxSize != null)
             Party(id = "kizzy", size = arrayOf(commonRpc.partyCurrentSize, commonRpc.partyMaxSize)).also { party = it }
-        discordWebSocket.sendActivity(
-            Presence(
+        presence = Presence(
                 activities = listOf(
                     Activity(
                         name = commonRpc.name,
@@ -343,6 +344,6 @@ class KizzyRPC(
                 since = startTimestamps,
                 status = this.status
             )
-        )
+        publishPresence()
     }
 }
