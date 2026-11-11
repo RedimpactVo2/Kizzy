@@ -24,7 +24,7 @@ import kotlinx.serialization.json.Json
  * and merges all active sources before publishing the combined activity list.
  */
 object RpcPresenceBridge {
-    const val RIPRO_PACKAGE = "com.my.kizzy.multirpc"
+    const val RIPRO_PACKAGE = "com.my.kizzy.ripro.bridge"
     const val BRIDGE_PERMISSION = "com.my.kizzy.permission.RPC_BRIDGE"
     const val ACTION_UPDATE = "com.my.kizzy.RPC_BRIDGE_UPDATE"
     const val ACTION_REMOVE = "com.my.kizzy.RPC_BRIDGE_REMOVE"
