@@ -60,16 +60,17 @@ object RpcPresenceBridge {
 
                 var socket: DiscordWebSocket? = null
                 try {
-                    socket = synchronized(lock) {
+                    val activeSocket = synchronized(lock) {
                         gateway ?: DiscordWebSocketImpl(token).also { gateway = it }
                     }
+                    socket = activeSocket
                     val shouldConnect = synchronized(lock) {
                         if (connectRequested) false else {
                             connectRequested = true
                             true
                         }
                     }
-                    if (shouldConnect) socket.connect()
+                    if (shouldConnect) activeSocket.connect()
 
                     val status = synchronized(lock) {
                         activeSources.values.lastOrNull()?.status ?: "online"
@@ -77,7 +78,7 @@ object RpcPresenceBridge {
                     // sendActivity waits for Discord READY. Bound that wait so a failed
                     // login/network connection cannot permanently stall the update queue.
                     kotlinx.coroutines.withTimeout(25_000L) {
-                        socket.sendActivity(
+                        activeSocket.sendActivity(
                             Presence(
                                 activities = snapshot,
                                 afk = true,
