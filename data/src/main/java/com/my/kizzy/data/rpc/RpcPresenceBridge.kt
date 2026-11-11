@@ -58,8 +58,9 @@ object RpcPresenceBridge {
                 val token = Prefs[Prefs.TOKEN, ""]
                 if (token.isBlank()) continue
 
+                var socket: DiscordWebSocket? = null
                 try {
-                    val socket = synchronized(lock) {
+                    socket = synchronized(lock) {
                         gateway ?: DiscordWebSocketImpl(token).also { gateway = it }
                     }
                     val shouldConnect = synchronized(lock) {
@@ -73,18 +74,29 @@ object RpcPresenceBridge {
                     val status = synchronized(lock) {
                         activeSources.values.lastOrNull()?.status ?: "online"
                     }
-                    socket.sendActivity(
-                        Presence(
-                            activities = snapshot,
-                            afk = true,
-                            since = 0L,
-                            status = status
+                    // sendActivity waits for Discord READY. Bound that wait so a failed
+                    // login/network connection cannot permanently stall the update queue.
+                    kotlinx.coroutines.withTimeout(25_000L) {
+                        socket.sendActivity(
+                            Presence(
+                                activities = snapshot,
+                                afk = true,
+                                since = 0L,
+                                status = status
+                            )
                         )
-                    )
+                    }
                     lastSentAt = System.currentTimeMillis()
                 } catch (_: Exception) {
+                    runCatching { socket?.close() }
                     synchronized(lock) {
+                        if (gateway === socket) gateway = null
                         connectRequested = false
+                    }
+                    // Retry the latest merged state after a short backoff.
+                    if (activeSources.isNotEmpty()) {
+                        delay(3_000L)
+                        pending.trySend(Unit)
                     }
                 }
             }
