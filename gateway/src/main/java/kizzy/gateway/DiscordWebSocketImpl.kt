@@ -43,8 +43,12 @@ open class DiscordWebSocketImpl(
         encodeDefaults = true
     }
 
+    // Keep one parent job for the lifetime of this socket. Returning a new
+    // SupervisorJob on every access detaches child coroutines and makes close()
+    // unable to reliably cancel the connection/heartbeat jobs.
+    private val socketJob = SupervisorJob()
     override val coroutineContext: CoroutineContext
-        get() = SupervisorJob() + Dispatchers.Default
+        get() = socketJob + Dispatchers.Default
 
     override suspend fun connect() {
         launch {
@@ -218,7 +222,7 @@ open class DiscordWebSocketImpl(
     override fun close() {
         heartbeatJob?.cancel()
         heartbeatJob = null
-        this.cancel()
+        socketJob.cancel()
         resumeGatewayUrl = null
         sessionId = null
         connected = false
