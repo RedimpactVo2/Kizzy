@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">리프로</string>
-    <string name="qs_tile_label" translatable="false">Kizzy Quickie</string>
+    <string name="qs_tile_label" translatable="false">Ripro Quick Tile</string>
 
     <!-- Activities -->
     <string name="activity_name">활동 이름</string>
