@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="com.my.kizzy.permission.RPC_BRIDGE"
+        android:protectionLevel="signature" />
+
+    <application>
+        <receiver
+            android:name="com.my.kizzy.feature_rpc_base.services.RpcBridgeReceiver"
+            android:exported="true"
+            android:permission="com.my.kizzy.permission.RPC_BRIDGE">
+            <intent-filter>
+                <action android:name="com.my.kizzy.RPC_BRIDGE_UPDATE" />
+                <action android:name="com.my.kizzy.RPC_BRIDGE_REMOVE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
