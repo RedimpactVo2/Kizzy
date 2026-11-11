@@ -31,10 +31,10 @@ jobs:
         run: chmod +x gradlew
 
       - name: Assemble Debug
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleKizzyBridgeDebug assembleRiproDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: apk-debug
-          path: app/build/outputs/apk/debug/**.apk
+          name: rpc-bridge-apks
+          path: app/build/outputs/apk/**/*.apk
