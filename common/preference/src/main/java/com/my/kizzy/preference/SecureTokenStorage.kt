@@ -15,7 +15,7 @@ import javax.crypto.spec.GCMParameterSpec
  * Stores the Discord credential encrypted with an app-private Android Keystore AES key.
  * The old MMKV value is migrated on first successful read and then removed by Prefs.
  */
-internal object SecureTokenStorage {
+object SecureTokenStorage {
     private const val TAG = "RiproTokenStore"
     private const val PREFS = "secure_credentials"
     private const val TOKEN_KEY = "discord_token"
