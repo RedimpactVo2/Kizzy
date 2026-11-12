@@ -152,10 +152,14 @@ open class DiscordWebSocketImpl(
     }
 
     private suspend fun sendHeartBeat() {
-        logger.i("Gateway","Sending $HEARTBEAT with seq: $sequence")
+        // Discord Gateway heartbeat data must be a JSON number or null.
+        // Sending "null" / sequence.toString() produces a JSON string and
+        // can cause the Gateway to reject the heartbeat or close the session.
+        val heartbeatSequence: Int? = sequence.takeIf { it > 0 }
+        logger.i("Gateway", "Sending $HEARTBEAT with seq: $heartbeatSequence")
         send(
             op = HEARTBEAT,
-            d = if (sequence == 0) "null" else sequence.toString(),
+            d = heartbeatSequence,
         )
     }
 
