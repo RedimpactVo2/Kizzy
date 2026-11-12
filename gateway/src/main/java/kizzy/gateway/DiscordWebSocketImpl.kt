@@ -125,7 +125,8 @@ open class DiscordWebSocketImpl(
                 return
             }
             "RESUMED" -> {
-                logger.i("Gateway","Session Resumed")
+                connected = true
+                logger.i("Gateway", "Session Resumed; Gateway is ready for presence updates")
             }
             else -> {}
         }
