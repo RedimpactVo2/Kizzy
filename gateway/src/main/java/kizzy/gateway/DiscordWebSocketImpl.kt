@@ -77,19 +77,40 @@ open class DiscordWebSocketImpl(
         }
     }
 
-    private suspend fun handleClose(){
+    private suspend fun handleClose() {
         heartbeatJob?.cancel()
         connected = false
         heartbeatAcknowledged = true
-        val close = websocket?.closeReason?.await()
-        logger.w("Gateway","Closed with code: ${close?.code}, " +
-                "reason: ${close?.message}, " +
-                "can_reconnect: ${close?.code?.toInt() == 4000}")
-        if (close?.code?.toInt() == 4000) {
-            delay(200.milliseconds)
-            connect()
-        } else
-            close()
+
+        val closeReason = websocket?.closeReason?.await()
+        val closeCode = closeReason?.code?.toInt()
+        logger.w(
+            "Gateway",
+            "Closed with code: $closeCode, reason: ${closeReason?.message}"
+        )
+
+        when (closeCode) {
+            // Discord asks clients to reconnect and resume for transient gateway errors.
+            4000 -> {
+                delay(1_000.milliseconds)
+                connect()
+            }
+            // Invalid sequence / expired session: reconnect with a fresh Identify.
+            4007, 4009 -> {
+                sequence = 0
+                sessionId = null
+                resumeGatewayUrl = null
+                delay(1_000.milliseconds)
+                connect()
+            }
+            // Gateway rate limit: back off before opening another connection.
+            4008 -> {
+                delay(5_000.milliseconds)
+                connect()
+            }
+            // Authentication, payload, version, or intent errors need user/config action.
+            else -> close()
+        }
     }
 
     private suspend fun onMessage(jsonString: String) {
