@@ -19,10 +19,13 @@ import kotlinx.coroutines.SupervisorJob
 
 object PreferenceConfig {
     lateinit var applicationScope: CoroutineScope
+    lateinit var appContext: Context
+        private set
 
     fun apply(context: Context) {
+        appContext = context.applicationContext
         applicationScope = CoroutineScope(SupervisorJob())
-        MMKV.initialize(context)
+        MMKV.initialize(appContext)
         Prefs.checkAndAutoDeleteSavedImages()
     }
 }
