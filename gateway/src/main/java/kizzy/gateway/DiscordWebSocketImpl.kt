@@ -279,7 +279,8 @@ open class DiscordWebSocketImpl(
         sessionId = null
         connected = false
         runBlocking {
-            websocket?.close()
+            runCatching { websocket?.close() }
+            client.close()
             logger.e("Gateway","Connection to gateway closed")
         }
     }
