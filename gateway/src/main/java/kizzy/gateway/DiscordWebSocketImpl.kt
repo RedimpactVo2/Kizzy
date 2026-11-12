@@ -35,6 +35,7 @@ open class DiscordWebSocketImpl(
     private var resumeGatewayUrl: String? = null
     private var heartbeatJob: Job? = null
     private var connected = false
+    private var heartbeatAcknowledged = true
     private var client: HttpClient = HttpClient {
         install(WebSockets)
     }
@@ -79,6 +80,7 @@ open class DiscordWebSocketImpl(
     private suspend fun handleClose(){
         heartbeatJob?.cancel()
         connected = false
+        heartbeatAcknowledged = true
         val close = websocket?.closeReason?.await()
         logger.w("Gateway","Closed with code: ${close?.code}, " +
                 "reason: ${close?.message}, " +
@@ -101,8 +103,12 @@ open class DiscordWebSocketImpl(
             DISPATCH -> payload.handleDispatch(jsonString)
             HEARTBEAT -> sendHeartBeat()
             RECONNECT -> reconnectWebSocket()
-            INVALID_SESSION -> handleInvalidSession()
+            INVALID_SESSION -> handleInvalidSession(jsonString)
             HELLO -> handleHello(jsonString)
+            HEARTBEAT_ACK -> {
+                heartbeatAcknowledged = true
+                logger.d("Gateway", "Heartbeat acknowledged")
+            }
             else -> {}
         }
     }
@@ -125,10 +131,22 @@ open class DiscordWebSocketImpl(
         }
     }
 
-    private suspend inline fun handleInvalidSession() {
-        logger.i("Gateway","Handling Invalid Session")
-        logger.d("Gateway","Sending Identify after 150ms")
-        delay(150)
+    private suspend fun handleInvalidSession(jsonString: String) {
+        val canResume = decodePayloadData<Boolean>(jsonString) == true
+        logger.w("Gateway", "Invalid session; resumable=$canResume")
+
+        if (canResume && !sessionId.isNullOrBlank()) {
+            logger.i("Gateway", "Attempting to resume the existing session")
+            sendResume()
+            return
+        }
+
+        // A non-resumable session must not reuse its old sequence/session ID.
+        sequence = 0
+        sessionId = null
+        resumeGatewayUrl = null
+        connected = false
+        delay(1_000L)
         sendIdentify()
     }
 
@@ -194,8 +212,16 @@ open class DiscordWebSocketImpl(
 
     private fun startHeartbeatJob(interval: Long) {
         heartbeatJob?.cancel()
+        heartbeatAcknowledged = true
         heartbeatJob = launch {
             while (isActive) {
+                // A missing ACK means the Gateway connection is no longer healthy.
+                if (!heartbeatAcknowledged) {
+                    logger.w("Gateway", "Heartbeat ACK missed; reconnecting")
+                    reconnectWebSocket()
+                    return@launch
+                }
+                heartbeatAcknowledged = false
                 sendHeartBeat()
                 delay(interval)
             }
