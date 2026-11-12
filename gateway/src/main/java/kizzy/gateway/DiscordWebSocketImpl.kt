@@ -36,6 +36,7 @@ open class DiscordWebSocketImpl(
     private var heartbeatJob: Job? = null
     private var connected = false
     private var heartbeatAcknowledged = true
+    private var reconnectAttempts = 0
     private var client: HttpClient = HttpClient {
         install(WebSockets)
     }
@@ -90,27 +91,32 @@ open class DiscordWebSocketImpl(
         )
 
         when (closeCode) {
-            // Discord asks clients to reconnect and resume for transient gateway errors.
-            4000 -> {
-                delay(1_000.milliseconds)
-                connect()
-            }
+            1000 -> close()
+            // Temporary network/server closures should resume the same session.
+            null, 1001, 1006, 1011, 1012, 4000 -> reconnectWithBackoff()
+            // Gateway rate limiting asks clients to wait before reconnecting.
+            1013, 4008 -> reconnectWithBackoff(minimumDelayMs = 5_000L)
             // Invalid sequence / expired session: reconnect with a fresh Identify.
-            4007, 4009 -> {
-                sequence = 0
-                sessionId = null
-                resumeGatewayUrl = null
-                delay(1_000.milliseconds)
-                connect()
-            }
-            // Gateway rate limit: back off before opening another connection.
-            4008 -> {
-                delay(5_000.milliseconds)
-                connect()
-            }
+            4007, 4009 -> reconnectWithBackoff(resetSession = true)
             // Authentication, payload, version, or intent errors need user/config action.
             else -> close()
         }
+    }
+
+    private suspend fun reconnectWithBackoff(
+        resetSession: Boolean = false,
+        minimumDelayMs: Long = 1_000L
+    ) {
+        if (resetSession) {
+            sequence = 0
+            sessionId = null
+            resumeGatewayUrl = null
+        }
+        val exponentialDelay = (1_000L * (1 shl reconnectAttempts.coerceAtMost(5)))
+            .coerceAtMost(30_000L)
+        reconnectAttempts = (reconnectAttempts + 1).coerceAtMost(5)
+        delay(maxOf(minimumDelayMs, exponentialDelay).milliseconds)
+        connect()
     }
 
     private suspend fun onMessage(jsonString: String) {
@@ -143,10 +149,12 @@ open class DiscordWebSocketImpl(
                 logger.i("Gateway","resume_gateway_url updated to $resumeGatewayUrl")
                 logger.i("Gateway","session_id updated to $sessionId")
                 connected = true
+                reconnectAttempts = 0
                 return
             }
             "RESUMED" -> {
                 connected = true
+                reconnectAttempts = 0
                 logger.i("Gateway", "Session Resumed; Gateway is ready for presence updates")
             }
             else -> {}
