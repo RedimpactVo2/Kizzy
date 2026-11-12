@@ -35,10 +35,12 @@ jobs:
         run: chmod +x gradlew
 
       - name: Assemble Debug
-        run: ./gradlew assembleKizzyBridgeDebug assembleRiproDebug
+        run: ./gradlew --no-daemon assembleKizzyBridgeDebug assembleRiproDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: rpc-bridge-apks
           path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
