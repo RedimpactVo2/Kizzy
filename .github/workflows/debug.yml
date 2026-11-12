@@ -1,18 +1,20 @@
 name: Build Debug Apk
 
-on: 
+on:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: debug-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     name: Build Apk
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel previous runs
-        uses: styfle/cancel-workflow-action@0.5.0
-        with:
-          access_token: ${{ github.token }}
-
       - uses: actions/checkout@v4
 
       - name: Setup jdk-17
@@ -26,10 +28,12 @@ jobs:
         run: chmod +x gradlew
 
       - name: Assemble Debug
-        run: ./gradlew assembleKizzyBridgeDebug assembleRiproDebug
+        run: ./gradlew --no-daemon assembleKizzyBridgeDebug assembleRiproDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: rpc-bridge-apks
           path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
