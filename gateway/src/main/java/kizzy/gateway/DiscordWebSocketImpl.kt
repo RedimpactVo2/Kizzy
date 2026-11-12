@@ -262,9 +262,9 @@ open class DiscordWebSocketImpl(
         return connected && websocket?.isActive == true
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     override fun isWebSocketConnected(): Boolean {
-        return websocket?.incoming != null && websocket?.outgoing?.isClosedForSend == false
+        // Report READY/RESUMED, not merely an open TCP/WebSocket transport.
+        return isSocketConnectedToAccount()
     }
 
     private suspend inline fun <reified T> send(op: OpCode, d: T?) {
