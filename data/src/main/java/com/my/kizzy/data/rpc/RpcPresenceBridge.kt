@@ -32,6 +32,11 @@ object RpcPresenceBridge {
     const val EXTRA_SOURCE = "source_id"
     const val EXTRA_PRESENCE = "presence_json"
 
+    private const val MAX_SOURCE_ID_LENGTH = 128
+    private const val MAX_PRESENCE_JSON_LENGTH = 65_536
+    private const val MAX_SOURCES = 16
+    private const val MAX_ACTIVITIES_PER_SOURCE = 10
+
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -112,22 +117,29 @@ object RpcPresenceBridge {
     }
 
     fun submit(context: Context, sourceId: String, presence: Presence) {
+        if (!isValidSourceId(sourceId)) return
+        val boundedPresence = presence.copy(
+            activities = presence.activities.orEmpty().take(MAX_ACTIVITIES_PER_SOURCE)
+        )
+
         if (context.packageName != RIPRO_PACKAGE) {
             val intent = Intent(ACTION_UPDATE)
                 .setPackage(RIPRO_PACKAGE)
                 .putExtra(EXTRA_SOURCE, sourceId)
-                .putExtra(EXTRA_PRESENCE, json.encodeToString(presence))
+                .putExtra(EXTRA_PRESENCE, json.encodeToString(boundedPresence))
             context.sendBroadcast(intent, BRIDGE_PERMISSION)
             return
         }
 
         synchronized(lock) {
-            activeSources[sourceId] = presence
+            if (!activeSources.containsKey(sourceId) && activeSources.size >= MAX_SOURCES) return
+            activeSources[sourceId] = boundedPresence
         }
         pending.trySend(Unit)
     }
 
     fun remove(context: Context, sourceId: String) {
+        if (!isValidSourceId(sourceId)) return
         if (context.packageName != RIPRO_PACKAGE) {
             val intent = Intent(ACTION_REMOVE)
                 .setPackage(RIPRO_PACKAGE)
@@ -142,16 +154,31 @@ object RpcPresenceBridge {
         pending.trySend(Unit)
     }
 
+    private fun isValidSourceId(sourceId: String): Boolean =
+        sourceId.isNotBlank() && sourceId.length <= MAX_SOURCE_ID_LENGTH
+
     fun receive(context: Context, intent: Intent) {
         if (context.packageName != RIPRO_PACKAGE) return
         val sourceId = intent.getStringExtra(EXTRA_SOURCE) ?: return
+        if (!isValidSourceId(sourceId)) return
 
         when (intent.action) {
             ACTION_UPDATE -> {
                 val payload = intent.getStringExtra(EXTRA_PRESENCE) ?: return
-                val presence = runCatching { json.decodeFromString<Presence>(payload) }.getOrNull()
+                if (payload.length > MAX_PRESENCE_JSON_LENGTH) {
+                    Log.w("RiproBridge", "Rejected oversized bridge payload")
+                    return
+                }
+                val decoded = runCatching { json.decodeFromString<Presence>(payload) }.getOrNull()
                     ?: return
+                val presence = decoded.copy(
+                    activities = decoded.activities.orEmpty().take(MAX_ACTIVITIES_PER_SOURCE)
+                )
                 synchronized(lock) {
+                    if (!activeSources.containsKey(sourceId) && activeSources.size >= MAX_SOURCES) {
+                        Log.w("RiproBridge", "Rejected bridge source limit")
+                        return
+                    }
                     activeSources[sourceId] = presence
                 }
                 pending.trySend(Unit)
