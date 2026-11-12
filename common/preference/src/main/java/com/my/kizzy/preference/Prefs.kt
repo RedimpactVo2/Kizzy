@@ -48,7 +48,7 @@ object Prefs {
         defaultValue: T? = null,
     ): T = when (T::class) {
         String::class -> if (key == TOKEN) {
-            val legacy = kv.decodeString(TOKEN, "")
+            val legacy = kv.decodeString(TOKEN, "") ?: ""
             val secure = SecureTokenStorage.read(PreferenceConfig.appContext, legacy) ?: ""
             if (secure.isNotBlank()) kv.removeValueForKey(TOKEN)
             secure as T
