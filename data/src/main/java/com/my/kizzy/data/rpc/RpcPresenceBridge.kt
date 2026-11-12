@@ -2,6 +2,7 @@ package com.my.kizzy.data.rpc
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.my.kizzy.preference.Prefs
 import kizzy.gateway.DiscordWebSocket
 import kizzy.gateway.DiscordWebSocketImpl
@@ -56,7 +57,10 @@ object RpcPresenceBridge {
                     activeSources.values.flatMap { it.activities.orEmpty() }
                 }
                 val token = Prefs[Prefs.TOKEN, ""]
-                if (token.isBlank()) continue
+                if (token.isBlank()) {
+                    Log.w("RiproBridge", "Discord token is empty; sign in to Discord inside Ripro first")
+                    continue
+                }
 
                 var socket: DiscordWebSocket? = null
                 try {
@@ -81,21 +85,24 @@ object RpcPresenceBridge {
                         activeSocket.sendActivity(
                             Presence(
                                 activities = snapshot,
-                                afk = true,
+                                afk = false,
                                 since = 0L,
                                 status = status
                             )
                         )
                     }
                     lastSentAt = System.currentTimeMillis()
-                } catch (_: Exception) {
+                    Log.i("RiproBridge", "Presence update sent; activity_count=${snapshot.size}")
+                } catch (error: Exception) {
+                    Log.e("RiproBridge", "Discord Gateway update failed: ${error.message}", error)
                     runCatching { socket?.close() }
-                    synchronized(lock) {
+                    val shouldRetry = synchronized(lock) {
                         if (gateway === socket) gateway = null
                         connectRequested = false
+                        activeSources.isNotEmpty()
                     }
                     // Retry the latest merged state after a short backoff.
-                    if (activeSources.isNotEmpty()) {
+                    if (shouldRetry) {
                         delay(3_000L)
                         pending.trySend(Unit)
                     }
