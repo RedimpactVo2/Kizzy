@@ -61,6 +61,13 @@ object Prefs {
     }
 
     fun remove(key: String) {
+        if (key == TOKEN) {
+            // Logout must clear both the encrypted credential and any legacy plaintext copy.
+            val cleared = SecureTokenStorage.write(PreferenceConfig.appContext, null)
+            if (!cleared) {
+                throw IllegalStateException("Unable to clear stored Discord credential")
+            }
+        }
         kv.removeValueForKey(key)
     }
 
