@@ -132,6 +132,7 @@ class MediaRpcService : Service() {
                 if (playingMedia.name.isBlank()) {
                     logger.d("MediaRPC", "Updating RPC with empty data, stopping RPC")
                     kizzyRPC.closeRPC()
+                    return
                 }
                 kizzyRPC.updateRPC(playingMedia, enableTimestamps)
             }
