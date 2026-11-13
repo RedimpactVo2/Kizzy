@@ -52,7 +52,7 @@ object Prefs {
             val secure = SecureTokenStorage.read(PreferenceConfig.appContext, legacy) ?: ""
             if (secure.isNotBlank()) kv.removeValueForKey(TOKEN)
             secure as T
-        } else kv.decodeString(key, defaultValue as String? ?: "") as T
+        } else (kv.decodeString(key, defaultValue as String? ?: "") ?: "") as T
         Int::class -> kv.decodeInt(key, defaultValue as? Int ?: -1) as T
         Boolean::class -> kv.decodeBool(key, defaultValue as? Boolean ?: false) as T
         Float::class -> kv.decodeFloat(key, defaultValue as? Float ?: -1f) as T
