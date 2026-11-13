@@ -21,7 +21,7 @@
         <intent
             android:action="com.my.kizzy.intent.action.START_APP_DETECTION"
             android:targetClass="com.my.kizzy.feature_rpc_base.services.ShortcutsActivity"
-            android:targetPackage="com.my.kizzy" />
+            android:targetPackage="com.my.kizzy.multirpc" />
     </shortcut>
 
     <shortcut
@@ -33,7 +33,7 @@
         <intent
             android:action="com.my.kizzy.intent.action.START_MEDIA_RPC"
             android:targetClass="com.my.kizzy.feature_rpc_base.services.ShortcutsActivity"
-            android:targetPackage="com.my.kizzy" />
+            android:targetPackage="com.my.kizzy.multirpc" />
     </shortcut>
 
     <shortcut
@@ -45,7 +45,7 @@
         <intent
             android:action="com.my.kizzy.intent.action.START_EXPERIMENTAL_RPC"
             android:targetClass="com.my.kizzy.feature_rpc_base.services.ShortcutsActivity"
-            android:targetPackage="com.my.kizzy" />
+            android:targetPackage="com.my.kizzy.multirpc" />
     </shortcut>
 
     <shortcut
@@ -57,6 +57,6 @@
         <intent
             android:action="com.my.kizzy.intent.action.STOP_RPC"
             android:targetClass="com.my.kizzy.feature_rpc_base.services.ShortcutsActivity"
-            android:targetPackage="com.my.kizzy" />
+            android:targetPackage="com.my.kizzy.multirpc" />
     </shortcut>
 </shortcuts>

@@ -23,7 +23,16 @@ import kotlin.time.Duration.Companion.hours
 
 object Prefs {
     val kv = MMKV.defaultMMKV()
-    operator fun set(key: String, value: Any?) =
+    operator fun set(key: String, value: Any?) {
+        if (key == TOKEN) {
+            val stored = SecureTokenStorage.write(PreferenceConfig.appContext, value as? String)
+            if (!stored) {
+                throw IllegalStateException("Unable to securely store Discord credential")
+            }
+            kv.removeValueForKey(TOKEN)
+            return
+        }
+
         when (value) {
             is String? -> kv.encode(key, value)
             is Int -> kv.encode(key, value)
@@ -32,12 +41,18 @@ object Prefs {
             is Long -> kv.encode(key, value)
             else -> throw UnsupportedOperationException("Not yet implemented")
         }
+    }
 
     inline operator fun <reified T : Any> get(
         key: String,
         defaultValue: T? = null,
     ): T = when (T::class) {
-        String::class -> kv.decodeString(key, defaultValue as String? ?: "") as T
+        String::class -> if (key == TOKEN) {
+            val legacy = kv.decodeString(TOKEN, "") ?: ""
+            val secure = SecureTokenStorage.read(PreferenceConfig.appContext, legacy) ?: ""
+            if (secure.isNotBlank()) kv.removeValueForKey(TOKEN)
+            secure as T
+        } else (kv.decodeString(key, defaultValue as String? ?: "") ?: "") as T
         Int::class -> kv.decodeInt(key, defaultValue as? Int ?: -1) as T
         Boolean::class -> kv.decodeBool(key, defaultValue as? Boolean ?: false) as T
         Float::class -> kv.decodeFloat(key, defaultValue as? Float ?: -1f) as T
@@ -46,6 +61,13 @@ object Prefs {
     }
 
     fun remove(key: String) {
+        if (key == TOKEN) {
+            // Logout must clear both the encrypted credential and any legacy plaintext copy.
+            val cleared = SecureTokenStorage.write(PreferenceConfig.appContext, null)
+            if (!cleared) {
+                throw IllegalStateException("Unable to clear stored Discord credential")
+            }
+        }
         kv.removeValueForKey(key)
     }
 

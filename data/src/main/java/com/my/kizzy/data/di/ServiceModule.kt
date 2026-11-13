@@ -12,6 +12,7 @@
 
 package com.my.kizzy.data.di
 
+import android.content.Context
 import com.my.kizzy.data.rpc.KizzyRPC
 import com.my.kizzy.domain.interfaces.Logger
 import com.my.kizzy.domain.repository.KizzyRepository
@@ -20,8 +21,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.components.ServiceComponent
-import kizzy.gateway.DiscordWebSocket
-import kizzy.gateway.DiscordWebSocketImpl
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,17 +30,11 @@ import kotlinx.coroutines.SupervisorJob
 @InstallIn(ServiceComponent::class)
 object ServiceModule {
     @Provides
-    fun providesDiscordWebsocket(
-        logger: Logger
-    ): DiscordWebSocket =
-        DiscordWebSocketImpl(Prefs[Prefs.TOKEN, ""], logger)
-
-    @Provides
     fun provideKizzyRpc(
+        @ApplicationContext context: Context,
         kizzyRepository: KizzyRepository,
-        discordWebSocket: DiscordWebSocket,
         logger: Logger
-    ) = KizzyRPC(Prefs[Prefs.TOKEN, ""], kizzyRepository, discordWebSocket, logger)
+    ) = KizzyRPC(context, Prefs[Prefs.TOKEN, ""], kizzyRepository, logger)
 
     @Provides
     fun providesCoroutineScope(): CoroutineScope {

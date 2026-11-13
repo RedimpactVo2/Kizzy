@@ -35,6 +35,8 @@ open class DiscordWebSocketImpl(
     private var resumeGatewayUrl: String? = null
     private var heartbeatJob: Job? = null
     private var connected = false
+    private var heartbeatAcknowledged = true
+    private var reconnectAttempts = 0
     private var client: HttpClient = HttpClient {
         install(WebSockets)
     }
@@ -43,8 +45,12 @@ open class DiscordWebSocketImpl(
         encodeDefaults = true
     }
 
+    // Keep one parent job for the lifetime of this socket. Returning a new
+    // SupervisorJob on every access detaches child coroutines and makes close()
+    // unable to reliably cancel the connection/heartbeat jobs.
+    private val socketJob = SupervisorJob()
     override val coroutineContext: CoroutineContext
-        get() = SupervisorJob() + Dispatchers.Default
+        get() = socketJob + Dispatchers.Default
 
     override suspend fun connect() {
         launch {
@@ -72,18 +78,45 @@ open class DiscordWebSocketImpl(
         }
     }
 
-    private suspend fun handleClose(){
+    private suspend fun handleClose() {
         heartbeatJob?.cancel()
         connected = false
-        val close = websocket?.closeReason?.await()
-        logger.w("Gateway","Closed with code: ${close?.code}, " +
-                "reason: ${close?.message}, " +
-                "can_reconnect: ${close?.code?.toInt() == 4000}")
-        if (close?.code?.toInt() == 4000) {
-            delay(200.milliseconds)
-            connect()
-        } else
-            close()
+        heartbeatAcknowledged = true
+
+        val closeReason = websocket?.closeReason?.await()
+        val closeCode = closeReason?.code?.toInt()
+        logger.w(
+            "Gateway",
+            "Closed with code: $closeCode, reason: ${closeReason?.message}"
+        )
+
+        when (closeCode) {
+            1000 -> close()
+            // Temporary network/server closures should resume the same session.
+            null, 1001, 1006, 1011, 1012, 4000 -> reconnectWithBackoff()
+            // Gateway rate limiting asks clients to wait before reconnecting.
+            1013, 4008 -> reconnectWithBackoff(minimumDelayMs = 5_000L)
+            // Invalid sequence / expired session: reconnect with a fresh Identify.
+            4007, 4009 -> reconnectWithBackoff(resetSession = true)
+            // Authentication, payload, version, or intent errors need user/config action.
+            else -> close()
+        }
+    }
+
+    private suspend fun reconnectWithBackoff(
+        resetSession: Boolean = false,
+        minimumDelayMs: Long = 1_000L
+    ) {
+        if (resetSession) {
+            sequence = 0
+            sessionId = null
+            resumeGatewayUrl = null
+        }
+        val exponentialDelay = (1_000L * (1 shl reconnectAttempts.coerceAtMost(5)))
+            .coerceAtMost(30_000L)
+        reconnectAttempts = (reconnectAttempts + 1).coerceAtMost(5)
+        delay(maxOf(minimumDelayMs, exponentialDelay).milliseconds)
+        connect()
     }
 
     private suspend fun onMessage(jsonString: String) {
@@ -97,8 +130,12 @@ open class DiscordWebSocketImpl(
             DISPATCH -> payload.handleDispatch(jsonString)
             HEARTBEAT -> sendHeartBeat()
             RECONNECT -> reconnectWebSocket()
-            INVALID_SESSION -> handleInvalidSession()
+            INVALID_SESSION -> handleInvalidSession(jsonString)
             HELLO -> handleHello(jsonString)
+            HEARTBEAT_ACK -> {
+                heartbeatAcknowledged = true
+                logger.d("Gateway", "Heartbeat acknowledged")
+            }
             else -> {}
         }
     }
@@ -112,19 +149,34 @@ open class DiscordWebSocketImpl(
                 logger.i("Gateway","resume_gateway_url updated to $resumeGatewayUrl")
                 logger.i("Gateway","session_id updated to $sessionId")
                 connected = true
+                reconnectAttempts = 0
                 return
             }
             "RESUMED" -> {
-                logger.i("Gateway","Session Resumed")
+                connected = true
+                reconnectAttempts = 0
+                logger.i("Gateway", "Session Resumed; Gateway is ready for presence updates")
             }
             else -> {}
         }
     }
 
-    private suspend inline fun handleInvalidSession() {
-        logger.i("Gateway","Handling Invalid Session")
-        logger.d("Gateway","Sending Identify after 150ms")
-        delay(150)
+    private suspend fun handleInvalidSession(jsonString: String) {
+        val canResume = decodePayloadData<Boolean>(jsonString) == true
+        logger.w("Gateway", "Invalid session; resumable=$canResume")
+
+        if (canResume && !sessionId.isNullOrBlank()) {
+            logger.i("Gateway", "Attempting to resume the existing session")
+            sendResume()
+            return
+        }
+
+        // A non-resumable session must not reuse its old sequence/session ID.
+        sequence = 0
+        sessionId = null
+        resumeGatewayUrl = null
+        connected = false
+        delay(1_000L)
         sendIdentify()
     }
 
@@ -148,10 +200,14 @@ open class DiscordWebSocketImpl(
     }
 
     private suspend fun sendHeartBeat() {
-        logger.i("Gateway","Sending $HEARTBEAT with seq: $sequence")
+        // Discord Gateway heartbeat data must be a JSON number or null.
+        // Sending "null" / sequence.toString() produces a JSON string and
+        // can cause the Gateway to reject the heartbeat or close the session.
+        val heartbeatSequence: Int? = sequence.takeIf { it > 0 }
+        logger.i("Gateway", "Sending $HEARTBEAT with seq: $heartbeatSequence")
         send(
             op = HEARTBEAT,
-            d = if (sequence == 0) "null" else sequence.toString(),
+            d = heartbeatSequence,
         )
     }
 
@@ -186,8 +242,16 @@ open class DiscordWebSocketImpl(
 
     private fun startHeartbeatJob(interval: Long) {
         heartbeatJob?.cancel()
+        heartbeatAcknowledged = true
         heartbeatJob = launch {
             while (isActive) {
+                // A missing ACK means the Gateway connection is no longer healthy.
+                if (!heartbeatAcknowledged) {
+                    logger.w("Gateway", "Heartbeat ACK missed; reconnecting")
+                    reconnectWebSocket()
+                    return@launch
+                }
+                heartbeatAcknowledged = false
                 sendHeartBeat()
                 delay(interval)
             }
@@ -198,9 +262,9 @@ open class DiscordWebSocketImpl(
         return connected && websocket?.isActive == true
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     override fun isWebSocketConnected(): Boolean {
-        return websocket?.incoming != null && websocket?.outgoing?.isClosedForSend == false
+        // Report READY/RESUMED, not merely an open TCP/WebSocket transport.
+        return isSocketConnectedToAccount()
     }
 
     private suspend inline fun <reified T> send(op: OpCode, d: T?) {
@@ -218,12 +282,13 @@ open class DiscordWebSocketImpl(
     override fun close() {
         heartbeatJob?.cancel()
         heartbeatJob = null
-        this.cancel()
+        socketJob.cancel()
         resumeGatewayUrl = null
         sessionId = null
         connected = false
         runBlocking {
-            websocket?.close()
+            runCatching { websocket?.close() }
+            client.close()
             logger.e("Gateway","Connection to gateway closed")
         }
     }

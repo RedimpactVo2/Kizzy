@@ -9,6 +9,18 @@ plugins {
 android {
     namespace = "com.my.kizzy"
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("kizzyBridge") {
+            dimension = "distribution"
+            applicationId = "com.my.kizzy.bridge"
+        }
+        create("ripro") {
+            dimension = "distribution"
+            applicationId = "com.my.kizzy.ripro.bridge"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.my.kizzy.multirpc"
         versionCode = libs.versions.version.code.get().toInt()
