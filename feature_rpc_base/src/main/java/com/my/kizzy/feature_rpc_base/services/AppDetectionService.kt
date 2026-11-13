@@ -228,6 +228,6 @@ class AppDetectionService : Service() {
     }
 
     companion object {
-        val EXCLUDED_APPS = listOf("com.my.kizzy", "com.discord")
+        val EXCLUDED_APPS = listOf("com.my.kizzy", "com.my.kizzy.multirpc", "com.my.kizzy.bridge", "com.my.kizzy.ripro.bridge", "com.discord")
     }
 }
